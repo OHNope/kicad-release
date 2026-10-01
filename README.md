@@ -105,7 +105,9 @@ fails when a variable is set without a credential. Drive layout:
                     pick-and-place, BOM, ERC/DRC reports
 ```
 
-Both runs fail rather than overwrite when two outputs share a file name.
+Both runs fail rather than overwrite when two outputs share a file name. Re-running a version
+replaces its files on Drive: anything else the run owns in that folder moves to the Drive trash,
+so don't keep hand-added files there.
 
 `source/` holds exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
 reports, `.kicad-auto/`, backups) stays local. The GitHub Release carries the output zip, and

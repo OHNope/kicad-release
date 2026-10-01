@@ -58,6 +58,11 @@ outputs:
     dir: assembly
     options:
       format: CSV
+      # Purchasing columns only. kicad-auto layout fields and per-part notes such as Purpose
+      # would otherwise become columns and clash inside grouped rows. A field a board lacks
+      # stays an empty column with a KiBot warning.
+      columns: [Row, References, Value, Footprint, Quantity Per PCB, Description, Manufacturer,
+                MPN, Datasheet]
 
   - name: position
     comment: Pick-and-place file
@@ -111,6 +116,8 @@ outputs:
       old_type: git
       new_type: current
       pcb: false
+      # %sf: diff outputs expand %f from the PCB, which a schematic-only board doesn't have yet.
+      output: '%sf-%i%I%v.%x'
 
   - name: diff_pcb
     comment: PCB diff against DIFF_REF
