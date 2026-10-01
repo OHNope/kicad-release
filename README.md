@@ -46,7 +46,7 @@ Each tag pushed runs the pipeline once. KiBot runs ERC/DRC first, then builds on
 | `v1.0-fab` | `fab`       | Gerbers, drill files, fab zip, pick-and-place, BOM                       |
 
 ERC/DRC errors only warn on a design release: the run still publishes, shows the counts as
-annotations and in the run summary, and ships the full HTML/JSON reports in `checks/`. They stop
+annotations and in the run summary, and ships the full HTML/JSON reports with the outputs. They stop
 a `-fab` release, so Gerbers that fail DRC never reach the fab house. A board without a
 `.kicad_pcb` yet gets a schematic-only design release (schematic PDF, BOM, schematic diff); a
 `-fab` tag fails until the board exists.
@@ -97,13 +97,15 @@ fails when a variable is set without a credential. Drive layout:
 
 ```text
 <folder>/<repo>/v1.0/
-  <repo>_v1.0.zip   from v1.0: the design outputs zipped
-  files/            from v1.0: the same outputs unpacked (docs/, assembly/, 3d/, diff/, checks/)
+  <repo>_v1.0.zip, schematic/PCB PDFs, BOM, iBOM, STEP, diffs, ERC/DRC reports
+                    from v1.0, flat
   source/           from v1.0: every committed file at the tag (.kicad_pro/.kicad_sch/.kicad_pcb,
                     libraries/, fp-lib-table, sym-lib-table, sources/, README.md, ...)
   Gerbers/          from v1.0-fab, flat: both zips, every Gerber and drill file,
                     pick-and-place, BOM, ERC/DRC reports
 ```
+
+Both runs fail rather than overwrite when two outputs share a file name.
 
 `source/` holds exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
 reports, `.kicad-auto/`, backups) stays local. The GitHub Release carries the output zip, and

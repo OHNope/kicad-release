@@ -151,7 +151,7 @@ jobs:
               rows.append(f"| {check} | {counts['error']} | {counts['warning']} |\n")
               if counts["error"]:
                   print(f"::{level} title={check}::{counts['error']} errors, {counts['warning']} warnings,"
-                        " see checks/ in the outputs")
+                        " see the ERC/DRC reports in the outputs")
           if rows:
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
                   summary.write("| Check | Errors | Warnings |\n|---|---|---|\n" + "".join(rows))
@@ -193,21 +193,20 @@ jobs:
           fi
           curl -fsSL https://rclone.org/install.sh | sudo bash
           DEST="gdrive:${{ github.event.repository.name }}/${{ steps.rel.outputs.version }}"
+          # Outputs land flat: design files directly in vX.Y/, fab files in vX.Y/Gerbers/.
+          DUPES=$(find "$OUT_DIR" -type f -printf '%f\n' | sort | uniq -d)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Outputs share file names, cannot flatten: $DUPES"
+            exit 1
+          fi
+          mkdir -p flat && find "$OUT_DIR" -type f -exec cp {} flat/ \;
           if [[ "${{ steps.rel.outputs.kind }}" == fab ]]; then
-            # vX.Y-fab: every fab file flat in vX.Y/Gerbers/, beside the design release.
-            DUPES=$(find "$OUT_DIR" -type f -printf '%f\n' | sort | uniq -d)
-            if [ -n "$DUPES" ]; then
-              echo "::error::Fab outputs share file names, cannot flatten: $DUPES"
-              exit 1
-            fi
-            mkdir -p gerbers && find "$OUT_DIR" -type f -exec cp {} gerbers/ \;
             DEST="$DEST/Gerbers"
-            rclone copy dist "$DEST"
-            rclone copy gerbers "$DEST"
-          else
-            rclone copy dist "$DEST"              # outputs zip
-            rclone copy "$OUT_DIR" "$DEST/files"  # outputs, unpacked
-            rclone copy source "$DEST/source"     # KiCad project as committed
+          fi
+          rclone copy dist "$DEST"  # outputs zip
+          rclone copy flat "$DEST"
+          if [[ "${{ steps.rel.outputs.kind }}" == design ]]; then
+            rclone copy source "$DEST/source"  # KiCad project as committed
           fi
           echo "Uploaded to $DEST"
 
