@@ -75,6 +75,12 @@ To test without tagging, use **Actions → PCB release → Run workflow** in the
 `.kibot.yaml` at the root. Start an override by copying the default; it must keep the
 `design`, `design_sch` and `fab` groups and the `DIFF_REF`/`XRC_DONT_STOP` definitions. A board with an override stops receiving changes to the default.
 
+The pipeline runs KiBot's development image (`INTI-CMNB/KiBot@v2_dk10`, KiCad 10), which follows
+KiBot's `dev` branch: KiBot 1.9.0 stops on schematics with multi-point graphic polylines
+([INTI-CMNB/KiBot#959](https://github.com/INTI-CMNB/KiBot/issues/959)), fixed only in `dev` so far.
+Each run pulls the current dev image, so a KiBot change can alter a re-run. Switch back to a
+`v2_k10_<version>` tag once a KiBot release includes the fix.
+
 ## Google Drive upload
 
 In the board repo, open Settings → Secrets and variables → Actions. Set the variable
