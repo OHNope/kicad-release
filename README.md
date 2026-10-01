@@ -105,7 +105,9 @@ fails when a variable is set without a credential. Drive layout:
 ```
 
 The repo part is exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
-reports, `.kicad-auto/`, backups) stays local. A run fails rather than overwrite when two outputs
+reports, `.kicad-auto/`, backups) stays local. Every `.kicad_sym` and `.pretty` library must be
+committed to reach Drive: a run fails when `sym-lib-table` or `fp-lib-table` points at a
+`${KIPRJMOD}/...` library that isn't in the repo. A run fails rather than overwrite when two outputs
 share a file name, or when a repo root entry shares a name with an output or with `Gerbers`.
 
 Re-running a version's workflow run refreshes it with the current pipeline: the run replaces its

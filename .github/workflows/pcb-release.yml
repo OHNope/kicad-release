@@ -58,6 +58,16 @@ jobs:
             exit 1
           fi
           PROJECT="${PROS[0]%.kicad_pro}"
+          # Project-local libraries the lib tables point at must be committed; otherwise Drive and
+          # KiBot get a project with missing symbols or footprints.
+          # shellcheck disable=SC2016  # ${KIPRJMOD} is literal text in the lib tables
+          MISSING=$({ grep -ohE '\$\{KIPRJMOD\}/[^)"]+' sym-lib-table fp-lib-table 2>/dev/null || true; } |
+                    sed 's|^\${KIPRJMOD}/||' | while read -r lib; do [ -e "$lib" ] || echo "$lib"; done |
+                    paste -sd ' ' -)
+          if [ -n "$MISSING" ]; then
+            echo "::error::Libraries listed in the lib tables are not committed: $MISSING"
+            exit 1
+          fi
           # A board repo may override the default KiBot config; it must keep the design/fab groups.
           CONFIG=.kibot.yaml
           [ -f "$CONFIG" ] || CONFIG="$PIPELINE_DIR/kibot/default.kibot.yaml"
