@@ -201,17 +201,22 @@ jobs:
             echo "::error::Outputs share file names, cannot flatten: $DUPES"
             exit 1
           fi
-          mkdir -p flat && cp dist/* flat/ && find "$OUT_DIR" -type f -exec cp {} flat/ \;
-          # sync, not copy: re-running a version replaces its files instead of leaving stale
-          # ones behind. Removed files go to the Drive trash.
+          mkdir -p upload && cp dist/* upload/ && find "$OUT_DIR" -type f -exec cp {} upload/ \;
           if [[ "${{ steps.rel.outputs.kind }}" == fab ]]; then
             DEST="$DEST/Gerbers"
-            rclone sync flat "$DEST"
           else
-            # The design run owns vX.Y/ except Gerbers/, which belongs to the fab run.
-            rclone sync flat "$DEST" --exclude '/source/**' --exclude '/Gerbers/**'
-            rclone sync source "$DEST/source"  # KiCad project as committed
+            # vX.Y/ mirrors the repo at this tag, with the outputs beside the KiCad files.
+            top() { find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n'; }
+            CLASH=$(comm -12 <(top source | sort) <({ top upload; echo Gerbers; } | sort))
+            if [ -n "$CLASH" ]; then
+              echo "::error::Repo root entries clash with release outputs: $CLASH"
+              exit 1
+            fi
+            cp -R source/. upload/
           fi
+          # sync, not copy: re-running a version replaces its files instead of leaving stale ones
+          # behind; removed files go to the Drive trash. Gerbers/ belongs to the fab run.
+          rclone sync upload "$DEST" --exclude '/Gerbers/**'
           echo "Uploaded to $DEST"
 
       - name: Create GitHub Release

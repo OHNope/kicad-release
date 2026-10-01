@@ -42,7 +42,7 @@ Each tag pushed runs the pipeline once. KiBot runs ERC/DRC first, then builds on
 
 | Tag        | KiBot group | Contents                                                                 |
 |------------|-------------|--------------------------------------------------------------------------|
-| `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the whole committed project tree |
+| `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the repo itself |
 | `v1.0-fab` | `fab`       | Gerbers, drill files, fab zip, pick-and-place, BOM                       |
 
 ERC/DRC errors only warn on a design release: the run still publishes, shows the counts as
@@ -96,19 +96,19 @@ In the board repo, open Settings → Secrets and variables → Actions. Set the 
 fails when a variable is set without a credential. Drive layout:
 
 ```text
-<folder>/<repo>/v1.0/
+<folder>/<repo>/v1.0/            from v1.0: the repo as GitHub shows it at the tag, plus the outputs
+  <project>.kicad_pro / .kicad_sch / .kicad_pcb, libraries/, sources/, fp-lib-table,
+  sym-lib-table, README.md, ...
   <repo>_v1.0.zip, schematic/PCB PDFs, BOM, iBOM, STEP, diffs, ERC/DRC reports
-                    from v1.0, flat
-  source/           from v1.0: every committed file at the tag (.kicad_pro/.kicad_sch/.kicad_pcb,
-                    libraries/, fp-lib-table, sym-lib-table, sources/, README.md, ...)
-  Gerbers/          from v1.0-fab, flat: both zips, every Gerber and drill file,
-                    pick-and-place, BOM, ERC/DRC reports
+  Gerbers/                       from v1.0-fab, flat: both zips, every Gerber and drill file,
+                                 pick-and-place, BOM, ERC/DRC reports
 ```
 
-Both runs fail rather than overwrite when two outputs share a file name. Re-running a version
-replaces its files on Drive: anything else the run owns in that folder moves to the Drive trash,
-so don't keep hand-added files there.
+The repo part is exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
+reports, `.kicad-auto/`, backups) stays local. A run fails rather than overwrite when two outputs
+share a file name, or when a repo root entry shares a name with an output or with `Gerbers`.
 
-`source/` holds exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
-reports, `.kicad-auto/`, backups) stays local. The GitHub Release carries the output zip, and
-GitHub attaches the tag's source archives on its own.
+Re-running a version's workflow run refreshes it with the current pipeline: the run replaces its
+files on Drive, moving anything else in that folder to the Drive trash (so don't keep hand-added
+files there), and overwrites the GitHub Release assets. Pushing the same tag again starts nothing.
+The GitHub Release carries the output zip, and GitHub attaches the tag's source archives on its own.
