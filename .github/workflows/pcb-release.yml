@@ -115,11 +115,13 @@ jobs:
           schema: ${{ steps.rel.outputs.project }}.kicad_sch
           board: ${{ steps.rel.outputs.board }}
           dir: ${{ env.OUT_DIR }}
-          targets: ${{ steps.rel.outputs.targets }}
           skip: ${{ steps.rel.outputs.skip }}
+          # The target group goes last, not in `targets`: the action puts targets before
+          # additional_args, and KiBot reads every word after the first target as another target.
           additional_args: >-
             -E DIFF_REF=${{ steps.rel.outputs.base }}
             -E XRC_DONT_STOP=${{ steps.rel.outputs.dont_stop }}
+            ${{ steps.rel.outputs.targets }}
 
       # Surface ERC/DRC results as annotations: warnings on design releases, errors on fab.
       - name: Report ERC/DRC
