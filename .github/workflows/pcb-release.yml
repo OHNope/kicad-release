@@ -1,7 +1,7 @@
 # Reusable KiCad release pipeline: KiBot ERC/DRC, then publish to GitHub Releases and Google Drive.
 # Board repos call it from a thin workflow (see README.md); every github.*, vars.* and secret
 # below belongs to the calling board repo.
-#   vX.Y      design release: KiCad sources, schematic/PCB PDFs, BOM, iBOM, STEP, diffs
+#   vX.Y      design release: committed project tree, schematic/PCB PDFs, BOM, iBOM, STEP, diffs
 #   vX.Y-fab  fabrication release: gerbers, drill, fab zip, pick-and-place, BOM. Must point at
 #             the same commit as vX.Y. Drive: <folder>/<repo>/vX.Y/ for the design release,
 #             flat <folder>/<repo>/vX.Y/Gerbers/ for the fab files.
@@ -101,13 +101,11 @@ jobs:
 
       - name: Package outputs
         run: |
-          NAME="${{ steps.rel.outputs.name }}"
-          mkdir -p dist
-          zip -qr "dist/$NAME.zip" "$OUT_DIR"
-          if [[ "${{ steps.rel.outputs.kind }}" == design ]]; then
-            # Committed KiCad sources at this ref; .gitignore keeps .kicad-auto/ and backups out.
-            git archive --format=zip -o "dist/${NAME}_source.zip" HEAD
-          fi
+          mkdir -p dist source
+          zip -qr "dist/${{ steps.rel.outputs.name }}.zip" "$OUT_DIR"
+          # The committed project tree at this ref, for Drive. .gitignore keeps .kicad-auto/, ERC/DRC
+          # reports and backups out. GitHub Releases attach their own source archives.
+          git archive HEAD | tar -x -C source
 
       - uses: actions/upload-artifact@v7
         with:
@@ -149,8 +147,9 @@ jobs:
             rclone copy dist "$DEST"
             rclone copy gerbers "$DEST"
           else
-            rclone copy dist "$DEST"              # zips
-            rclone copy "$OUT_DIR" "$DEST/files"  # unpacked for browsing
+            rclone copy dist "$DEST"              # outputs zip
+            rclone copy "$OUT_DIR" "$DEST/files"  # outputs, unpacked
+            rclone copy source "$DEST/source"     # KiCad project as committed
           fi
           echo "Uploaded to $DEST"
 

@@ -43,7 +43,7 @@ What it builds depends on the tag:
 
 | Tag        | KiBot group | Contents                                                                 |
 |------------|-------------|--------------------------------------------------------------------------|
-| `v1.0`     | `design`    | `_source.zip` of the committed KiCad files, schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag |
+| `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the whole committed project tree |
 | `v1.0-fab` | `fab`       | Gerbers, drill files, fab zip, pick-and-place, BOM                       |
 
 Gerbers ship only with a `-fab` tag. That tag must point at the same commit as its design tag,
@@ -92,7 +92,14 @@ fails when a variable is set without a credential. Drive layout:
 
 ```text
 <folder>/<repo>/v1.0/
-  <repo>_v1.0.zip, <repo>_v1.0_source.zip, files/   from v1.0
-  Gerbers/                                          from v1.0-fab, flat: the zips, every
-                                                    Gerber and drill file, pick-and-place, BOM
+  <repo>_v1.0.zip   from v1.0: the design outputs zipped
+  files/            from v1.0: the same outputs unpacked (docs/, assembly/, 3d/, diff/)
+  source/           from v1.0: every committed file at the tag (.kicad_pro/.kicad_sch/.kicad_pcb,
+                    libraries/, fp-lib-table, sym-lib-table, sources/, README.md, ...)
+  Gerbers/          from v1.0-fab, flat: both zips, every Gerber and drill file,
+                    pick-and-place, BOM
 ```
+
+`source/` holds exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
+reports, `.kicad-auto/`, backups) stays local. The GitHub Release carries the output zip, and
+GitHub attaches the tag's source archives on its own.
