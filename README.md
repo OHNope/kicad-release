@@ -38,13 +38,18 @@ Secrets and variables are read from the board repo (see [Google Drive upload](#g
 
 ## Tags
 
-Each tag pushed runs the pipeline once. KiBot runs ERC/DRC first and fails the release on errors.
-What it builds depends on the tag:
+Each tag pushed runs the pipeline once. KiBot runs ERC/DRC first, then builds one output group:
 
 | Tag        | KiBot group | Contents                                                                 |
 |------------|-------------|--------------------------------------------------------------------------|
 | `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the whole committed project tree |
 | `v1.0-fab` | `fab`       | Gerbers, drill files, fab zip, pick-and-place, BOM                       |
+
+ERC/DRC errors only warn on a design release: the run still publishes, shows the counts as
+annotations and in the run summary, and ships the full HTML/JSON reports in `checks/`. They stop
+a `-fab` release, so Gerbers that fail DRC never reach the fab house. A board without a
+`.kicad_pcb` yet gets a schematic-only design release (schematic PDF, BOM, schematic diff); a
+`-fab` tag fails until the board exists.
 
 Gerbers ship only with a `-fab` tag. That tag must point at the same commit as its design tag,
 so tag the design release first:
@@ -68,7 +73,7 @@ To test without tagging, use **Actions → PCB release → Run workflow** in the
 
 [`kibot/default.kibot.yaml`](kibot/default.kibot.yaml) is used unless the board repo has its own
 `.kibot.yaml` at the root. Start an override by copying the default; it must keep the
-`design` and `fab` groups. A board with an override stops receiving changes to the default.
+`design`, `design_sch` and `fab` groups and the `DIFF_REF`/`XRC_DONT_STOP` definitions. A board with an override stops receiving changes to the default.
 
 ## Google Drive upload
 
@@ -93,11 +98,11 @@ fails when a variable is set without a credential. Drive layout:
 ```text
 <folder>/<repo>/v1.0/
   <repo>_v1.0.zip   from v1.0: the design outputs zipped
-  files/            from v1.0: the same outputs unpacked (docs/, assembly/, 3d/, diff/)
+  files/            from v1.0: the same outputs unpacked (docs/, assembly/, 3d/, diff/, checks/)
   source/           from v1.0: every committed file at the tag (.kicad_pro/.kicad_sch/.kicad_pcb,
                     libraries/, fp-lib-table, sym-lib-table, sources/, README.md, ...)
   Gerbers/          from v1.0-fab, flat: both zips, every Gerber and drill file,
-                    pick-and-place, BOM
+                    pick-and-place, BOM, ERC/DRC reports
 ```
 
 `source/` holds exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC

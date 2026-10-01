@@ -1,10 +1,11 @@
 # Reusable KiCad release pipeline: KiBot ERC/DRC, then publish to GitHub Releases and Google Drive.
 # Board repos call it from a thin workflow (see README.md); every github.*, vars.* and secret
 # below belongs to the calling board repo.
-#   vX.Y      design release: committed project tree, schematic/PCB PDFs, BOM, iBOM, STEP, diffs
+#   vX.Y      design release: committed project tree, schematic/PCB PDFs, BOM, iBOM, STEP, diffs.
+#             ERC/DRC errors only warn. Without a .kicad_pcb it builds the schematic outputs only.
 #   vX.Y-fab  fabrication release: gerbers, drill, fab zip, pick-and-place, BOM. Must point at
-#             the same commit as vX.Y. Drive: <folder>/<repo>/vX.Y/ for the design release,
-#             flat <folder>/<repo>/vX.Y/Gerbers/ for the fab files.
+#             the same commit as vX.Y; ERC/DRC errors stop it. Drive: <folder>/<repo>/vX.Y/ for
+#             the design release, flat <folder>/<repo>/vX.Y/Gerbers/ for the fab files.
 # Drive upload runs when GDRIVE_FOLDER_ID or GDRIVE_TEAM_DRIVE_ID is set, with one credential:
 #   secret   GDRIVE_TOKEN          rclone OAuth token JSON; any folder you can edit (wins if both set)
 #   secret   GDRIVE_SA_JSON        service-account JSON key; shared drives only
@@ -73,6 +74,20 @@ jobs:
             echo "::error::$GITHUB_REF_NAME must point at the same commit as tag $VERSION"
             exit 1
           fi
+          TARGETS=$KIND SKIP=__NONE__ BOARD="$PROJECT.kicad_pcb" DONT_STOP=false
+          if [[ ! -f "$BOARD" ]]; then
+            if [[ "$KIND" == fab ]]; then
+              echo "::error::A fab release needs $BOARD"
+              exit 1
+            fi
+            # Schematic-only board: no DRC, zone fill or PCB outputs yet.
+            echo "::warning::No $BOARD yet, building the schematic-only design release"
+            TARGETS=design_sch SKIP=drc,check_zone_fills BOARD=__SCAN__
+          fi
+          # ERC/DRC errors only warn on design releases; they stop vX.Y-fab.
+          if [[ "$KIND" == design ]]; then
+            DONT_STOP=true
+          fi
           # Diff base: previous design tag, or the root commit on the first release.
           BASE=$(git describe --tags --abbrev=0 --match 'v*' --exclude '*-fab' HEAD^ 2>/dev/null \
                  || git rev-list --max-parents=0 HEAD | tail -n1)
@@ -80,6 +95,10 @@ jobs:
             echo "project=$PROJECT"
             echo "config=$CONFIG"
             echo "kind=$KIND"
+            echo "targets=$TARGETS"
+            echo "skip=$SKIP"
+            echo "board=$BOARD"
+            echo "dont_stop=$DONT_STOP"
             echo "version=$VERSION"
             echo "name=${{ github.event.repository.name }}_$NAME"
             echo "base=$BASE"
@@ -94,10 +113,49 @@ jobs:
         with:
           config: ${{ steps.rel.outputs.config }}
           schema: ${{ steps.rel.outputs.project }}.kicad_sch
-          board: ${{ steps.rel.outputs.project }}.kicad_pcb
+          board: ${{ steps.rel.outputs.board }}
           dir: ${{ env.OUT_DIR }}
-          targets: ${{ steps.rel.outputs.kind }}
-          additional_args: -E DIFF_REF=${{ steps.rel.outputs.base }}
+          targets: ${{ steps.rel.outputs.targets }}
+          skip: ${{ steps.rel.outputs.skip }}
+          additional_args: >-
+            -E DIFF_REF=${{ steps.rel.outputs.base }}
+            -E XRC_DONT_STOP=${{ steps.rel.outputs.dont_stop }}
+
+      # Surface ERC/DRC results as annotations: warnings on design releases, errors on fab.
+      - name: Report ERC/DRC
+        if: ${{ !cancelled() && steps.rel.outcome == 'success' }}
+        run: |
+          python3 - "${{ steps.rel.outputs.kind }}" <<'PY'
+          import collections, glob, json, os, sys
+
+          level = "warning" if sys.argv[1] == "design" else "error"
+
+          def count(node, counts):
+              if isinstance(node, dict):
+                  if "type" in node and "items" in node and not node.get("excluded"):
+                      counts[node.get("severity", "error")] += 1
+                  for value in node.values():
+                      count(value, counts)
+              elif isinstance(node, list):
+                  for value in node:
+                      count(value, counts)
+
+          rows = []
+          for check in ("ERC", "DRC"):
+              reports = glob.glob(f"{os.environ['OUT_DIR']}/checks/*-{check.lower()}*.json")
+              if not reports:
+                  continue
+              counts = collections.Counter()
+              with open(reports[0]) as report:
+                  count(json.load(report), counts)
+              rows.append(f"| {check} | {counts['error']} | {counts['warning']} |\n")
+              if counts["error"]:
+                  print(f"::{level} title={check}::{counts['error']} errors, {counts['warning']} warnings,"
+                        " see checks/ in the outputs")
+          if rows:
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                  summary.write("| Check | Errors | Warnings |\n|---|---|---|\n" + "".join(rows))
+          PY
 
       - name: Package outputs
         run: |

@@ -1,17 +1,27 @@
 # Default KiBot release config (KiCad 10), used when a board repo has no root .kibot.yaml.
-# An override must keep the `design` and `fab` groups. Reference: https://kibot.readthedocs.io
+# An override must keep the `design`, `design_sch` and `fab` groups and the definitions below.
+# Reference: https://kibot.readthedocs.io
 # Run locally from a board repo: kibot -c <this file> -d output        (everything)
 #                                kibot -c <this file> -d output fab    (one group)
 # DIFF_REF is the git ref the diff outputs compare against; CI passes the previous release tag.
+# XRC_DONT_STOP=true turns ERC/DRC errors into warnings; CI sets it for design releases only.
 definitions:
   DIFF_REF: HEAD
+  XRC_DONT_STOP: false
 ...
 kibot:
   version: 1
 
+# ERC/DRC reports land in output/checks/ whether or not the run stops.
 preflight:
-  erc: true               # fail on ERC errors
-  drc: true               # fail on DRC errors and schematic/PCB parity mismatches
+  erc:
+    dont_stop: @XRC_DONT_STOP@
+    format: [HTML, JSON]
+    dir: checks
+  drc:                    # also checks schematic/PCB parity
+    dont_stop: @XRC_DONT_STOP@
+    format: [HTML, JSON]
+    dir: checks
   check_zone_fills: true  # refill zones before plotting
 
 outputs:
@@ -112,10 +122,12 @@ outputs:
       new_type: current
       pcb: true
 
-# CI builds one group per tag: vX.Y -> design, vX.Y-fab -> fab. BOM is in both so the fab
-# zip alone is enough to order assembly.
+# CI builds one group per tag: vX.Y -> design (design_sch while the board has no .kicad_pcb),
+# vX.Y-fab -> fab. BOM is in both so the fab zip alone is enough to order assembly.
 groups:
+  - name: design_sch
+    outputs: [bom, schematic_pdf, diff_sch]
   - name: design
-    outputs: [bom, ibom, schematic_pdf, pcb_pdf, step, diff_sch, diff_pcb]
+    outputs: [design_sch, ibom, pcb_pdf, step, diff_pcb]
   - name: fab
     outputs: [gerbers, drill, fab_zip, position, bom]
