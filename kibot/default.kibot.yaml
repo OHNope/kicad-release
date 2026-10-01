@@ -1,0 +1,121 @@
+# Default KiBot release config (KiCad 10), used when a board repo has no root .kibot.yaml.
+# An override must keep the `design` and `fab` groups. Reference: https://kibot.readthedocs.io
+# Run locally from a board repo: kibot -c <this file> -d output        (everything)
+#                                kibot -c <this file> -d output fab    (one group)
+# DIFF_REF is the git ref the diff outputs compare against; CI passes the previous release tag.
+definitions:
+  DIFF_REF: HEAD
+...
+kibot:
+  version: 1
+
+preflight:
+  erc: true               # fail on ERC errors
+  drc: true               # fail on DRC errors and schematic/PCB parity mismatches
+  check_zone_fills: true  # refill zones before plotting
+
+outputs:
+  # ---------- Fabrication ----------
+  - name: gerbers
+    comment: Gerber files
+    type: gerber
+    dir: fab/gerbers
+    layers: [copper, F.SilkS, B.SilkS, F.Mask, B.Mask, F.Paste, B.Paste, Edge.Cuts]
+
+  - name: drill
+    comment: Excellon drill files
+    type: excellon
+    dir: fab/gerbers
+    options:
+      pth_and_npth_single_file: false
+
+  - name: fab_zip
+    comment: Gerbers + drill in one zip for the fab house
+    type: compress
+    dir: fab
+    options:
+      output: '%f-gerbers.%x'
+      files:
+        - from_output: gerbers
+          dest: /
+        - from_output: drill
+          dest: /
+
+  # ---------- Assembly ----------
+  - name: bom
+    comment: Bill of materials
+    type: bom
+    dir: assembly
+    options:
+      format: CSV
+
+  - name: position
+    comment: Pick-and-place file
+    type: position
+    dir: assembly
+    options:
+      format: CSV
+      separate_files_for_front_and_back: false
+
+  - name: ibom
+    comment: Interactive HTML BOM
+    type: ibom
+    dir: assembly
+
+  # ---------- Documentation ----------
+  - name: schematic_pdf
+    comment: Schematic PDF
+    type: pdf_sch_print
+    dir: docs
+
+  - name: pcb_pdf
+    comment: One page per copper layer plus top/bottom assembly
+    type: pcb_print
+    dir: docs
+    options:
+      format: PDF
+      force_edge_cuts: true
+      pages:
+        - layers: [F.Cu]
+          sheet: '%ll'
+          repeat_for_layer: F.Cu
+          repeat_layers: copper
+        - layers: [F.Fab, F.SilkS]
+          sheet: Assembly top
+        - layers: [B.Fab, B.SilkS]
+          sheet: Assembly bottom
+          mirror: true
+
+  - name: step
+    comment: 3D model
+    type: step
+    dir: 3d
+
+  # ---------- Change review ----------
+  - name: diff_sch
+    comment: Schematic diff against DIFF_REF
+    type: diff
+    dir: diff
+    options:
+      old: '@DIFF_REF@'
+      old_type: git
+      new_type: current
+      pcb: false
+
+  - name: diff_pcb
+    comment: PCB diff against DIFF_REF
+    type: diff
+    dir: diff
+    options:
+      old: '@DIFF_REF@'
+      old_type: git
+      new_type: current
+      pcb: true
+
+# CI builds one group per tag: vX.Y -> design, vX.Y-fab -> fab. BOM is in both so the fab
+# zip alone is enough to order assembly.
+groups:
+  - name: design
+    outputs: [bom, ibom, schematic_pdf, pcb_pdf, step, diff_sch, diff_pcb]
+  - name: fab
+    outputs: [gerbers, drill, fab_zip, position, bom]

@@ -1,0 +1,163 @@
+# Reusable KiCad release pipeline: KiBot ERC/DRC, then publish to GitHub Releases and Google Drive.
+# Board repos call it from a thin workflow (see README.md); every github.*, vars.* and secret
+# below belongs to the calling board repo.
+#   vX.Y      design release: KiCad sources, schematic/PCB PDFs, BOM, iBOM, STEP, diffs
+#   vX.Y-fab  fabrication release: gerbers, drill, fab zip, pick-and-place, BOM. Must point at
+#             the same commit as vX.Y. Drive: <folder>/<repo>/vX.Y/ for the design release,
+#             flat <folder>/<repo>/vX.Y/Gerbers/ for the fab files.
+# Drive upload runs when GDRIVE_FOLDER_ID or GDRIVE_TEAM_DRIVE_ID is set, with one credential:
+#   secret   GDRIVE_TOKEN          rclone OAuth token JSON; any folder you can edit (wins if both set)
+#   secret   GDRIVE_SA_JSON        service-account JSON key; shared drives only
+#   variable GDRIVE_TEAM_DRIVE_ID  shared drive ID (service-account mode)
+#   variable GDRIVE_FOLDER_ID      target folder ID (empty = shared drive root)
+
+name: PCB release
+
+on:
+  workflow_call:
+    inputs:
+      fab:
+        description: Build the fabrication outputs instead of the design release
+        type: boolean
+        default: false
+
+env:
+  OUT_DIR: output
+  PIPELINE_DIR: .kicad-release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # One run per board repo at a time: parallel rclone runs can create duplicate same-name
+    # Drive folders.
+    concurrency:
+      group: pcb-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # diff outputs need history and tags
+
+      # This pipeline's own files (the default KiBot config), at the exact revision being run.
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: ${{ env.PIPELINE_DIR }}
+          sparse-checkout: kibot
+
+      - name: Resolve release
+        id: rel
+        run: |
+          echo "$PIPELINE_DIR/" >> .git/info/exclude  # keep KiBot's git diffs blind to it
+          shopt -s nullglob
+          PROS=(*.kicad_pro)
+          if (( ${#PROS[@]} != 1 )); then
+            echo "::error::Expected exactly one .kicad_pro at the repo root, found ${#PROS[@]}"
+            exit 1
+          fi
+          PROJECT="${PROS[0]%.kicad_pro}"
+          # A board repo may override the default KiBot config; it must keep the design/fab groups.
+          CONFIG=.kibot.yaml
+          [ -f "$CONFIG" ] || CONFIG="$PIPELINE_DIR/kibot/default.kibot.yaml"
+          NAME="${GITHUB_REF_NAME//\//-}"
+          if [[ "$GITHUB_REF_NAME" == *-fab || "${{ inputs.fab }}" == true ]]; then
+            KIND=fab
+          else
+            KIND=design
+          fi
+          VERSION="${NAME%-fab}"
+          # Gerbers ship only for a commit that already carries the matching design tag.
+          if [[ "$KIND" == fab && "$GITHUB_EVENT_NAME" == push ]] &&
+             [[ "$(git rev-parse -q --verify "refs/tags/$VERSION^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::$GITHUB_REF_NAME must point at the same commit as tag $VERSION"
+            exit 1
+          fi
+          # Diff base: previous design tag, or the root commit on the first release.
+          BASE=$(git describe --tags --abbrev=0 --match 'v*' --exclude '*-fab' HEAD^ 2>/dev/null \
+                 || git rev-list --max-parents=0 HEAD | tail -n1)
+          {
+            echo "project=$PROJECT"
+            echo "config=$CONFIG"
+            echo "kind=$KIND"
+            echo "version=$VERSION"
+            echo "name=${{ github.event.repository.name }}_$NAME"
+            echo "base=$BASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $KIND for $PROJECT with $CONFIG"
+          # KiBot runs as root in a container; let its git read the runner-owned checkout.
+          mkdir -p "$RUNNER_TEMP/_github_home"
+          git config --file "$RUNNER_TEMP/_github_home/.gitconfig" --add safe.directory '*'
+
+      - name: Run KiBot
+        uses: INTI-CMNB/KiBot@v2_k10_1_9_0
+        with:
+          config: ${{ steps.rel.outputs.config }}
+          schema: ${{ steps.rel.outputs.project }}.kicad_sch
+          board: ${{ steps.rel.outputs.project }}.kicad_pcb
+          dir: ${{ env.OUT_DIR }}
+          targets: ${{ steps.rel.outputs.kind }}
+          additional_args: -E DIFF_REF=${{ steps.rel.outputs.base }}
+
+      - name: Package outputs
+        run: |
+          NAME="${{ steps.rel.outputs.name }}"
+          mkdir -p dist
+          zip -qr "dist/$NAME.zip" "$OUT_DIR"
+          if [[ "${{ steps.rel.outputs.kind }}" == design ]]; then
+            # Committed KiCad sources at this ref; .gitignore keeps .kicad-auto/ and backups out.
+            git archive --format=zip -o "dist/${NAME}_source.zip" HEAD
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.rel.outputs.name }}
+          path: dist/
+
+      - name: Upload to Google Drive
+        if: vars.GDRIVE_FOLDER_ID != '' || vars.GDRIVE_TEAM_DRIVE_ID != ''
+        env:
+          RCLONE_CONFIG_GDRIVE_TYPE: drive
+          RCLONE_CONFIG_GDRIVE_SCOPE: drive
+          RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID }}
+          GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
+          GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
+          GDRIVE_TEAM_DRIVE_ID: ${{ vars.GDRIVE_TEAM_DRIVE_ID }}
+        run: |
+          # A service account has no storage quota, so it can only write into shared drives;
+          # a user token uploads as you into any folder you can edit, "Shared with me" included.
+          if [ -n "$GDRIVE_TOKEN" ]; then
+            export RCLONE_CONFIG_GDRIVE_TOKEN="$GDRIVE_TOKEN"
+          elif [ -n "$GDRIVE_SA_JSON" ] && [ -n "$GDRIVE_TEAM_DRIVE_ID" ]; then
+            export RCLONE_CONFIG_GDRIVE_SERVICE_ACCOUNT_CREDENTIALS="$GDRIVE_SA_JSON"
+            export RCLONE_CONFIG_GDRIVE_TEAM_DRIVE="$GDRIVE_TEAM_DRIVE_ID"
+          else
+            echo "::error::Drive upload needs secret GDRIVE_TOKEN, or GDRIVE_SA_JSON with variable GDRIVE_TEAM_DRIVE_ID"
+            exit 1
+          fi
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          DEST="gdrive:${{ github.event.repository.name }}/${{ steps.rel.outputs.version }}"
+          if [[ "${{ steps.rel.outputs.kind }}" == fab ]]; then
+            # vX.Y-fab: every fab file flat in vX.Y/Gerbers/, beside the design release.
+            DUPES=$(find "$OUT_DIR" -type f -printf '%f\n' | sort | uniq -d)
+            if [ -n "$DUPES" ]; then
+              echo "::error::Fab outputs share file names, cannot flatten: $DUPES"
+              exit 1
+            fi
+            mkdir -p gerbers && find "$OUT_DIR" -type f -exec cp {} gerbers/ \;
+            DEST="$DEST/Gerbers"
+            rclone copy dist "$DEST"
+            rclone copy gerbers "$DEST"
+          else
+            rclone copy dist "$DEST"              # zips
+            rclone copy "$OUT_DIR" "$DEST/files"  # unpacked for browsing
+          fi
+          echo "Uploaded to $DEST"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          make_latest: ${{ steps.rel.outputs.kind == 'design' }}  # "latest" stays the design release
