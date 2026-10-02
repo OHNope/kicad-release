@@ -1,7 +1,7 @@
 # Reusable KiCad release pipeline: KiBot ERC/DRC, then publish to GitHub Releases and Google Drive.
 # Board repos call it from a thin workflow (see README.md); every github.*, vars.* and secret
 # below belongs to the calling board repo.
-#   vX.Y      design release: committed project tree, schematic/PCB PDFs, BOM, iBOM, STEP, diffs.
+#   vX.Y      design release: committed project files, schematic/PCB PDFs, BOM, iBOM, STEP, diffs.
 #             ERC/DRC errors only warn. Without a .kicad_pcb it builds the schematic outputs only.
 #   vX.Y-fab  fabrication release: gerbers, drill, fab zip, pick-and-place, BOM. Must point at
 #             the same commit as vX.Y; ERC/DRC errors stop it. Drive: <folder>/<repo>/vX.Y/ for
@@ -178,6 +178,10 @@ jobs:
           # The committed project tree at this ref, for Drive. .gitignore keeps .kicad-auto/, ERC/DRC
           # reports and backups out. GitHub Releases attach their own source archives.
           git archive HEAD | tar -x -C source
+          # Drive gets the design, not the repo plumbing: drop dotfiles (.gitignore, .github/, ...)
+          # at any depth and the root license files.
+          find source -mindepth 1 -name '.*' -prune -exec rm -rf {} +
+          find source -mindepth 1 -maxdepth 1 \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' \) -exec rm -rf {} +
 
       - uses: actions/upload-artifact@v7
         with:
@@ -217,7 +221,7 @@ jobs:
           if [[ "${{ steps.rel.outputs.kind }}" == fab ]]; then
             DEST="$DEST/Gerbers"
           else
-            # vX.Y/ mirrors the repo at this tag, with the outputs beside the KiCad files.
+            # vX.Y/ holds the project files at this tag, with the outputs beside them.
             top() { find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n'; }
             CLASH=$(comm -12 <(top source | sort) <({ top upload; echo Gerbers; } | sort))
             if [ -n "$CLASH" ]; then

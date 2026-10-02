@@ -42,7 +42,7 @@ Each tag pushed runs the pipeline once. KiBot runs ERC/DRC first, then builds on
 
 | Tag        | KiBot group | Contents                                                                 |
 |------------|-------------|--------------------------------------------------------------------------|
-| `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the repo itself |
+| `v1.0`     | `design`    | Schematic/PCB PDFs, BOM, interactive BOM, STEP, schematic/PCB diffs against the previous `v*` tag. Drive also gets the project files |
 | `v1.0-fab` | `fab`       | Gerbers, drill files, fab zip, pick-and-place, BOM                       |
 
 ERC/DRC errors only warn on a design release: the run still publishes, shows the counts as
@@ -102,7 +102,7 @@ In the board repo, open Settings → Secrets and variables → Actions. Set the 
 fails when a variable is set without a credential. Drive layout:
 
 ```text
-<folder>/<repo>/v1.0/            from v1.0: the repo as GitHub shows it at the tag, plus the outputs
+<folder>/<repo>/v1.0/            from v1.0: the committed project files at the tag, plus the outputs
   <project>.kicad_pro / .kicad_sch / .kicad_pcb, libraries/, sources/, fp-lib-table,
   sym-lib-table, README.md, ...
   <repo>_v1.0.zip, schematic/PCB PDFs, BOM, iBOM, STEP, diffs, ERC/DRC reports
@@ -110,8 +110,9 @@ fails when a variable is set without a credential. Drive layout:
                                  pick-and-place, BOM, ERC/DRC reports
 ```
 
-The repo part is exactly what Git tracks, so anything the board's `.gitignore` excludes (ERC/DRC
-reports, `.kicad-auto/`, backups) stays local. Every `.kicad_sym` and `.pretty` library must be
+The project part is what Git tracks at the tag, minus repo plumbing: dotfiles and dot-directories
+at any depth (`.gitignore`, `.github/`, ...) and root `LICENSE*`/`COPYING*` files stay on GitHub.
+Anything the board's `.gitignore` excludes (ERC/DRC reports, `.kicad-auto/`, backups) stays local. Every `.kicad_sym` and `.pretty` library must be
 committed to reach Drive: a run fails when `sym-lib-table` or `fp-lib-table` points at a
 `${KIPRJMOD}/...` library that isn't in the repo. A run fails rather than overwrite when two outputs
 share a file name, or when a repo root entry shares a name with an output or with `Gerbers`.
