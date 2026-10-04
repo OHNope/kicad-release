@@ -24,6 +24,15 @@ preflight:
     dir: checks
   check_zone_fills: true  # refill zones before plotting
 
+filters:
+  # iBOM with a filter writes a netlist, and KiBot crashes there on footprints that exist only on
+  # the PCB (board-only, e.g. Allegro drawing symbols): they get no parent sheet. Treating parts
+  # excluded from the BOM as not fitted keeps them out of that netlist.
+  - name: ibom_skip_not_in_bom
+    comment: Parts excluded from the BOM count as not fitted
+    type: generic
+    exclude_not_in_bom: true
+
 outputs:
   # ---------- Fabrication ----------
   - name: gerbers
@@ -80,7 +89,7 @@ outputs:
     type: ibom
     dir: assembly
     options:
-      dnf_filter: _kibom_dnf_Config
+      dnf_filter: [_kibom_dnf_Config, ibom_skip_not_in_bom]
 
   # ---------- Documentation ----------
   - name: schematic_pdf
