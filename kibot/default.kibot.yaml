@@ -64,6 +64,8 @@ outputs:
       columns: [Row, References, Value, Footprint, Quantity Per PCB, Description, Manufacturer,
                 MPN, Datasheet]
 
+  # KiBot applies KiCad's DNP flag only to outputs that run a filter. The BOM runs this one by
+  # default; position and ibom have none, so without it they list DNP parts as fitted.
   - name: position
     comment: Pick-and-place file
     type: position
@@ -71,11 +73,14 @@ outputs:
     options:
       format: CSV
       separate_files_for_front_and_back: false
+      dnf_filter: _kibom_dnf_Config
 
   - name: ibom
     comment: Interactive HTML BOM
     type: ibom
     dir: assembly
+    options:
+      dnf_filter: _kibom_dnf_Config
 
   # ---------- Documentation ----------
   - name: schematic_pdf
